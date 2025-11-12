@@ -8,6 +8,7 @@ from transformers import pipeline
 import uvicorn
 import asyncio
 from asyncio import Lock
+import os
 
 app = FastAPI()
 
@@ -66,7 +67,8 @@ async def generate(req: GenRequest):
         return {"generated_text": out[0]["generated_text"]}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 7860))  # HF sets PORT
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
 
 
 # uvicorn server:app --host 0.0.0.0 --port 8000 --log-level debug
