@@ -368,7 +368,7 @@
                 <label for="modelType">Model Type:</label>
                 <select id="modelType" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
                     <option value="summary">Summary</option>
-                    <option value="chat">Chat</option>
+                    <option value="chat">Text Generation (with Hover)</option>
                 </select>
             </div>
         </div>
@@ -388,11 +388,27 @@
         // Sync toggle with dropdown
         modelToggle.addEventListener('change', function() {
             modelType.value = this.checked ? 'chat' : 'summary';
+            updatePlaceholder();
         });
         
         modelType.addEventListener('change', function() {
             modelToggle.checked = (this.value === 'chat');
+            updatePlaceholder();
         });
+        
+        function updatePlaceholder() {
+            const inputText = document.getElementById('inputText');
+            const modelType = document.getElementById('modelType');
+            
+            if (modelType.value === 'summary') {
+                inputText.placeholder = 'Enter a long article or text to summarize...';
+            } else {
+                inputText.placeholder = 'Enter your text here for chat generation...';
+            }
+        }
+        
+        // Initialize placeholder on page load
+        updatePlaceholder();
         
         async function generate() {
             const inputText = document.getElementById('inputText').value;

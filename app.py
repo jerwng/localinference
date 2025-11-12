@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BartForConditionalGeneration, BartTokenizer
 import torch
 import uvicorn
 import asyncio
@@ -38,9 +38,18 @@ def load_model(model_type: str):
     global current_model, current_tokenizer, current_model_type
     if current_model_type != model_type:
         print(f"Loading {model_type} model...")
-        model_name = "Qwen/Qwen2.5-0.5B"
-        current_tokenizer = AutoTokenizer.from_pretrained(model_name)
-        current_model = AutoModelForCausalLM.from_pretrained(model_name)
+        
+        if model_type == "summary":
+            # Use BART model for summarization
+            model_name = "facebook/bart-large-cnn"
+            current_tokenizer = BartTokenizer.from_pretrained(model_name)
+            current_model = BartForConditionalGeneration.from_pretrained(model_name)
+        else:
+            # Use Qwen model for chat/generation
+            model_name = "Qwen/Qwen2.5-0.5B"
+            current_tokenizer = AutoTokenizer.from_pretrained(model_name)
+            current_model = AutoModelForCausalLM.from_pretrained(model_name)
+        
         current_model.eval()
         current_model_type = model_type
         print(f"{model_type} model loaded successfully")
@@ -73,10 +82,10 @@ async def generate(req: GenRequest):
                 )
             )
         else:
-            # For summary mode, use efficient generation without alternatives
+            # For summary mode, use BART summarization
             result = await loop.run_in_executor(
                 None,
-                lambda: generate_simple(
+                lambda: generate_summary(
                     current_model,
                     current_tokenizer,
                     req.text,
@@ -146,44 +155,33 @@ def generate_with_alternatives(model, tokenizer, prompt, max_new_tokens=15):
         "full_text": final_text
     }
 
-def generate_simple(model, tokenizer, prompt, max_new_tokens=15):
-    """Generate text efficiently without computing alternatives (for summary mode)"""
+def generate_summary(model, tokenizer, prompt, max_new_tokens=150):
+    """Generate summary using BART model"""
     
-    # Tokenize to torch tensors
-    enc = tokenizer(prompt, return_tensors="pt")
-    input_ids = enc["input_ids"]
-    attention_mask = enc.get("attention_mask", torch.ones_like(input_ids))
-    
-    stop_on_eos = True
+    # BART summarization works differently - it expects text to summarize
+    # Tokenize input text
+    inputs = tokenizer(prompt, return_tensors="pt", max_length=1024, truncation=True)
     
     with torch.no_grad():
-        for _ in range(max_new_tokens):
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            # take logits for the last position
-            next_logits = outputs.logits[:, -1, :]  # (batch=1, vocab)
-            
-            # Simple greedy decoding - just get the best token (more efficient)
-            chosen_id = torch.argmax(next_logits, dim=-1).item()
-            
-            # append chosen token for next step
-            new_token = torch.tensor([[chosen_id]])
-            input_ids = torch.cat([input_ids, new_token], dim=1)
-            attention_mask = torch.cat(
-                [attention_mask, torch.ones((1, 1), dtype=attention_mask.dtype)],
-                dim=1
-            )
-            
-            # optional early stop on EOS/special
-            if stop_on_eos and chosen_id in tokenizer.all_special_ids:
-                break
+        # Generate summary using BART
+        summary_ids = model.generate(
+            inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            max_new_tokens=max_new_tokens,
+            min_length=30,
+            do_sample=False,
+            early_stopping=True,
+            num_beams=4,
+            length_penalty=2.0,
+            no_repeat_ngram_size=3
+        )
     
-    # Generate final text
-    final_text = tokenizer.decode(input_ids[0], skip_special_tokens=True)
-    generated_text = final_text[len(prompt):]  # Only the newly generated part
+    # Decode the generated summary
+    summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
     
     return {
-        "generated_text": generated_text,
-        "full_text": final_text
+        "generated_text": summary,
+        "full_text": summary
     }
 
 if __name__ == "__main__":
