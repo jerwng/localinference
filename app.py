@@ -59,15 +59,30 @@ async def generate(req: GenRequest):
         
         # Run the inference in a thread pool to avoid blocking the event loop
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: generate_with_alternatives(
-                current_model,
-                current_tokenizer,
-                req.text,
-                req.max_new_tokens
+        
+        # Use different generation methods based on model type
+        if req.model_type == "chat":
+            # For chat mode, include generation details for hover functionality
+            result = await loop.run_in_executor(
+                None,
+                lambda: generate_with_alternatives(
+                    current_model,
+                    current_tokenizer,
+                    req.text,
+                    req.max_new_tokens
+                )
             )
-        )
+        else:
+            # For summary mode, use efficient generation without alternatives
+            result = await loop.run_in_executor(
+                None,
+                lambda: generate_simple(
+                    current_model,
+                    current_tokenizer,
+                    req.text,
+                    req.max_new_tokens
+                )
+            )
         return result
 
 def generate_with_alternatives(model, tokenizer, prompt, max_new_tokens=15):
@@ -128,6 +143,46 @@ def generate_with_alternatives(model, tokenizer, prompt, max_new_tokens=15):
     return {
         "generated_text": generated_text,
         "generation_details": generation_details,
+        "full_text": final_text
+    }
+
+def generate_simple(model, tokenizer, prompt, max_new_tokens=15):
+    """Generate text efficiently without computing alternatives (for summary mode)"""
+    
+    # Tokenize to torch tensors
+    enc = tokenizer(prompt, return_tensors="pt")
+    input_ids = enc["input_ids"]
+    attention_mask = enc.get("attention_mask", torch.ones_like(input_ids))
+    
+    stop_on_eos = True
+    
+    with torch.no_grad():
+        for _ in range(max_new_tokens):
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            # take logits for the last position
+            next_logits = outputs.logits[:, -1, :]  # (batch=1, vocab)
+            
+            # Simple greedy decoding - just get the best token (more efficient)
+            chosen_id = torch.argmax(next_logits, dim=-1).item()
+            
+            # append chosen token for next step
+            new_token = torch.tensor([[chosen_id]])
+            input_ids = torch.cat([input_ids, new_token], dim=1)
+            attention_mask = torch.cat(
+                [attention_mask, torch.ones((1, 1), dtype=attention_mask.dtype)],
+                dim=1
+            )
+            
+            # optional early stop on EOS/special
+            if stop_on_eos and chosen_id in tokenizer.all_special_ids:
+                break
+    
+    # Generate final text
+    final_text = tokenizer.decode(input_ids[0], skip_special_tokens=True)
+    generated_text = final_text[len(prompt):]  # Only the newly generated part
+    
+    return {
+        "generated_text": generated_text,
         "full_text": final_text
     }
 

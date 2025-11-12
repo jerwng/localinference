@@ -448,8 +448,8 @@
                 
                 const data = await response.json();
                 
-                // Display the generated text with interactive words
-                displayGeneratedText(data);
+                // Display the generated text with interactive words (pass model type)
+                displayGeneratedText(data, selectedModel);
                 output.className = 'output-box';
             } catch (error) {
                 output.textContent = `Error: ${error.message}`;
@@ -459,7 +459,7 @@
             }
         }
         
-        function displayGeneratedText(data) {
+        function displayGeneratedText(data, modelType) {
             const output = document.getElementById('output');
             const inputText = document.getElementById('inputText').value;
             
@@ -472,9 +472,9 @@
             promptSpan.style.color = '#9ca3af';
             output.appendChild(promptSpan);
             
-            // Check if we have generation details (new format)
-            if (data.generation_details && data.generation_details.length > 0) {
-                // Add each generated word as an interactive element
+            // Check if we have generation details AND we're in chat mode
+            if (modelType === 'chat' && data.generation_details && data.generation_details.length > 0) {
+                // Add each generated word as an interactive element with hover tooltips
                 data.generation_details.forEach((detail, index) => {
                     const wordSpan = document.createElement('span');
                     wordSpan.className = 'generated-word';
@@ -501,7 +501,7 @@
                     output.appendChild(wordSpan);
                 });
             } else {
-                // Fallback for old format without generation details
+                // For summary mode or fallback - just display the text normally
                 const generatedSpan = document.createElement('span');
                 generatedSpan.textContent = data.generated_text;
                 generatedSpan.style.color = '#e5e7eb';
