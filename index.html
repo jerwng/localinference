@@ -270,27 +270,88 @@
             background: rgba(127, 29, 29, 0.3);
             border-color: #ef4444;
         }
+
+        /* Tooltip styles for alternative words */
+        .generated-word {
+            position: relative;
+            display: inline;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+            background-color: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            margin: 0 1px;
+        }
+
+        .generated-word:hover {
+            background-color: rgba(59, 130, 246, 0.2);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+
+        .tooltip {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(17, 24, 39, 0.95);
+            color: #e5e7eb;
+            text-align: center;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            min-width: 200px;
+            max-width: 300px;
+            transition: opacity 0.3s, visibility 0.3s;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .tooltip::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: rgba(17, 24, 39, 0.95) transparent transparent transparent;
+        }
+
+        .generated-word:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .tooltip-header {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #3b82f6;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .alternative-word {
+            display: inline-block;
+            background: rgba(75, 85, 99, 0.3);
+            padding: 3px 8px;
+            margin: 2px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 11px;
+            color: #d1d5db;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🤖 Local Inference UI</h1>
-        
-        <div class="model-selector">
-            <div class="model-option" style="flex-direction: row; align-items: center; justify-content: center;">
-                <label style="margin-right: 15px; font-size: 1.1em;">
-                    Active Model:
-                </label>
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <span style="color: #888;">Summary</span>
-                    <label class="toggle">
-                        <input type="checkbox" id="modelToggle" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span style="color: #667eea; font-weight: 600;">Chat</span>
-                </label>
-            </div>
-        </div>
         
         <div class="input-section">
             <label for="inputText">Input Text:</label>
@@ -307,7 +368,7 @@
                 <label for="modelType">Model Type:</label>
                 <select id="modelType" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;">
                     <option value="summary">Summary</option>
-                    <option value="chat">Chat</option>
+                    <option value="chat">Text Generation (with Hover)</option>
                 </select>
             </div>
         </div>
@@ -327,11 +388,27 @@
         // Sync toggle with dropdown
         modelToggle.addEventListener('change', function() {
             modelType.value = this.checked ? 'chat' : 'summary';
+            updatePlaceholder();
         });
         
         modelType.addEventListener('change', function() {
             modelToggle.checked = (this.value === 'chat');
+            updatePlaceholder();
         });
+        
+        function updatePlaceholder() {
+            const inputText = document.getElementById('inputText');
+            const modelType = document.getElementById('modelType');
+            
+            if (modelType.value === 'summary') {
+                inputText.placeholder = 'Enter a long article or text to summarize...';
+            } else {
+                inputText.placeholder = 'Enter your text here for chat generation...';
+            }
+        }
+        
+        // Initialize placeholder on page load
+        updatePlaceholder();
         
         async function generate() {
             const inputText = document.getElementById('inputText').value;
@@ -370,13 +447,65 @@
                 }
                 
                 const data = await response.json();
-                output.textContent = data.generated_text;
+                
+                // Display the generated text with interactive words (pass model type)
+                displayGeneratedText(data, selectedModel);
                 output.className = 'output-box';
             } catch (error) {
                 output.textContent = `Error: ${error.message}`;
                 output.className = 'output-box error';
             } finally {
                 generateBtn.disabled = false;
+            }
+        }
+        
+        function displayGeneratedText(data, modelType) {
+            const output = document.getElementById('output');
+            const inputText = document.getElementById('inputText').value;
+            
+            // Clear the output
+            output.innerHTML = '';
+            
+            // Add the original prompt text (non-interactive)
+            const promptSpan = document.createElement('span');
+            promptSpan.textContent = inputText;
+            promptSpan.style.color = '#9ca3af';
+            output.appendChild(promptSpan);
+            
+            // Check if we have generation details AND we're in chat mode
+            if (modelType === 'chat' && data.generation_details && data.generation_details.length > 0) {
+                // Add each generated word as an interactive element with hover tooltips
+                data.generation_details.forEach((detail, index) => {
+                    const wordSpan = document.createElement('span');
+                    wordSpan.className = 'generated-word';
+                    wordSpan.textContent = detail.chosen;
+                    
+                    // Create tooltip with alternatives
+                    const tooltip = document.createElement('div');
+                    tooltip.className = 'tooltip';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'tooltip-header';
+                    header.textContent = 'Alternative Words:';
+                    tooltip.appendChild(header);
+                    
+                    // Add alternative words
+                    detail.alternatives.forEach(alt => {
+                        const altSpan = document.createElement('span');
+                        altSpan.className = 'alternative-word';
+                        altSpan.textContent = alt;
+                        tooltip.appendChild(altSpan);
+                    });
+                    
+                    wordSpan.appendChild(tooltip);
+                    output.appendChild(wordSpan);
+                });
+            } else {
+                // For summary mode or fallback - just display the text normally
+                const generatedSpan = document.createElement('span');
+                generatedSpan.textContent = data.generated_text;
+                generatedSpan.style.color = '#e5e7eb';
+                output.appendChild(generatedSpan);
             }
         }
         
